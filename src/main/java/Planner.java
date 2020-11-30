@@ -1,137 +1,147 @@
 import java.io.*;
 import java.util.*;
 /**
- * Класс Planner для упорядочивания зависимостей.
+ * Класс Planner для упорядочивания зависимостей задач.
  * Принимает в main аргументом имя файла, откуда берет данные.
  * Проверки на правильное содержание файла отсутствуют.
  */
 public class Planner {
+    /**
+     * Основное хранилище для данных. Содержит пары "номер задачи - данные о зависимостых".
+     * Для хранения данных о зависимостях используется {@link TaskContainer}
+     */
+    private final HashMap<Integer, TaskContainer> tasks = new HashMap<>();
 
     public static void main(String[] args){
         long startTime = System.currentTimeMillis();
         try{
             System.out.println("The Data file's name: "+args[0]);
-            planTasks(args[0]);
         } catch (NullPointerException e) {
             e.printStackTrace();
         }
+        ArrayList<ArrayList<Integer>> result = new Planner().planTasks(args[0]);
         long endTime = System.currentTimeMillis();
         System.out.println("Work is done.\nExecution time: "+((endTime-startTime)/1000)+"s");
+        System.out.println("Start output...");
+        Planner.outputData(result);
+        System.out.println("Planner has saved result in outputData.txt");
     }
     /**
-     * Основной метод, делающий всю работу: читает файл, вспомогательным методом проверяет
-     * зависимости, выводит результат.
-     * @param fileName - имя файла на чтение, вносится аргументом при запуске в main
+     * Берет данные из файла и обрабатывает их, сортируя задачи по количеству зависимостей.
+     * Для считывания данных использует {@link Planner#readData(String)}
+     * @param filename - имя файла с исходными задачами
+     * @return Возвращает сортированный список списков задач,
+     * в котором решение каждого списка дает возможность решать следующий список.
      */
-    private static void planTasks(String fileName) {
-        //основное хранилище для отношения зависимости
-        HashSet<TaskContainer> allTasks = new HashSet<>();
-        //хранилище для главных задач
-        HashSet<Integer> mainTasks = new HashSet<>();
-        //хранилище для зависимых задач
-        HashSet<Integer> dependTasks = new HashSet<>();
-        try (FileReader fileReader = new FileReader(fileName)){
-            BufferedReader reader = new BufferedReader(fileReader);
-            String line=reader.readLine();
-            while(line != null) {
-                //проходимся по файлу, запоминаем все отношения, а заодно разделяем задачи на главные и зависимые
-                TaskContainer singleTask = new TaskContainer(line.split(" "));
-                mainTasks.add(singleTask.getMainTask());
-                dependTasks.add(singleTask.getDepTask());
-                allTasks.add(singleTask);
+    public ArrayList<ArrayList<Integer>> planTasks(String filename) {
+        //Первым делом считываем файл с данными. По условиям задачи проверять его не требуется.
+        readData(filename);
+        //Заводим переменную для обработанных данных, которую будет возвращать метод.
+        ArrayList<ArrayList<Integer>> result = new ArrayList<>();
+        //Будем учитывать количество задач и количество обработанных задач, а так же номер итерации цикла.
+        int tasksCount = tasks.size();
+        int checkedTasksCount = 0;
+        int actualStepNumber = 0;
+        while (tasksCount != checkedTasksCount) {
+            //Нам нужно сохранять задачи, которые зависят только от обработанных на предыдущих итерациях (ни от одной
+            //другой для первой итерации).
+            ArrayList<Integer> actualList = new ArrayList<>();
+            //Обходим множество задач
+            for (Iterator<Map.Entry<Integer, TaskContainer>> iterator = tasks.entrySet().iterator(); iterator.hasNext();) {
+                Map.Entry<Integer, TaskContainer> entry = iterator.next();
+                Integer key = entry.getKey();
+                TaskContainer value = entry.getValue();
+                //Если нет необходимых для этой задачи задач, добавляем в список независимых на данной итерации
+                //(если только она не стала "независимой" на этой же итерации)
+                if (value.mainsCount == 0 && value.stepNumber < actualStepNumber) {
+                    actualList.add(key);
+                    checkedTasksCount++;
+                    //Обходим все зависимые задачи,
+                    //снижаем для них счетчик зависимостей,
+                    //запоминаем номер итерации чтобы не обработать задачи как "независимые" в этой же итерации
+                    for (Integer dependantNumber : value.dependants) {
+                        TaskContainer taskCont = tasks.get(dependantNumber);
+                        taskCont.mainsCount -= 1;
+                        taskCont.stepNumber = actualStepNumber;
+                    }
+                    iterator.remove();
+                }
+            }
+            //Сохраняем список, добавляя в результирующий список списков, и переходим к следующей итерации.
+            result.add(actualList);
+            actualStepNumber++;
+        }
+        return result;
+    }
+
+    /**
+     * Считывает файл с исходными задачами и сохраняет в переменную {@link Planner#tasks}
+     * @param filename - имя файла с исходными задачами
+     */
+    private void readData(String filename) {
+        BufferedReader reader;
+        try {
+            reader = new BufferedReader(new FileReader(filename));
+            String line = reader.readLine();
+            while (line != null) {
+                String[] tasksNumbers = line.split(" ");
+                Integer mainTask = Integer.parseInt(tasksNumbers[0]);
+                Integer dependant = Integer.parseInt(tasksNumbers[1]);
+                //Если зависимая задача уже в общем списке, повышаем для неё счетчик зависимостей
+                if (tasks.containsKey(dependant))
+                    tasks.get(dependant).mainsCount++;
+                else //Иначе просто кладем в список с одной завимимостью
+                    tasks.put(dependant, new TaskContainer(1));
+
+                tasks.putIfAbsent(mainTask, new TaskContainer());
+                //если главной задачи еще нет, добавляем, а потом приписываем ей зависимую в её список.
+                tasks.get(mainTask).addDependant(dependant);
+
                 line = reader.readLine();
             }
-            System.out.println("File's read.");
-        }
-        catch(IOException e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
-        //Подаем данные на обработку и вывод
-        processTasks(mainTasks,dependTasks,allTasks);
+    }
 
-    }
     /**
-     * Берет на себя обработку и одновременный вывод данных.
-     * @param mains - подготовленное множество главных задач
-     * @param dependants - подготовленное множество зависимых задач
-     * @param tasksPairs - зависимости задач
+     * Выводит результат работы в "outputData.txt"
+     * @param result - список списков задач, которые можно решать в порядке вывода строк
      */
-    private static void processTasks(HashSet<Integer> mains, HashSet<Integer> dependants, HashSet<TaskContainer> tasksPairs){
-        HashSet<Integer> newMainTasks;
-        if (tasksPairs.isEmpty()) return;
-        try(FileWriter outputData = new FileWriter("outputData.txt", false))
-        {
-            do {
-                newMainTasks = new HashSet<>();
-                //System.out.println("Values: "+valList.toString());
-                //вычитаем множество зависимых из множества главных, получая независимые задачи
-                mains.removeAll(dependants);
-                dependants = new HashSet<>();
-                outputData.write(mains.toString());
-                outputData.append('\n');
-                Iterator<TaskContainer> it = tasksPairs.iterator();
-                while(it.hasNext()){
-                    //в цикле удаляем из множества отношений те, где главная задача независима, а зависимые от них
-                    //помещаем в новое множество главных, чтобы не потерять
-                    //заодно снова заполняем множество зависымых задач
-                    TaskContainer singleOne = it.next();
-                    if(mains.contains(singleOne.getMainTask())){
-                        newMainTasks.add(singleOne.getDepTask());
-                        it.remove();
-                    } else {
-                        newMainTasks.add(singleOne.getMainTask());
-                        dependants.add(singleOne.getDepTask());
-                    }
-                }
-                //выводим независимые задачи этой итерации
-                mains = newMainTasks;
-            }while(!mains.isEmpty());
-            outputData.close();
-        }
-        catch(IOException e){
+    static void outputData(ArrayList<ArrayList<Integer>> result) {
+        FileWriter writer;
+        try {
+            writer = new FileWriter("outputData.txt", false);
+            for (List<Integer> list : result) {
+                writer.write(list.toString());
+                writer.append('\n');
+            }
+            writer.close();
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
     /**
-     * Встроенный класс для хранения пары главной-зависимой задач.
+     * Встроенный класс для хранения списка зависимых и количества главных задач.
      */
-    protected static class TaskContainer{
-        /** Пара из двух номеров задач */
-        private final Integer[] tasksPair = new Integer[2];
-        /**
-         * Функция получения первого значения поля {@link TaskContainer#tasksPair}
-         * @return возвращает номер главной задачи
+    static class TaskContainer{
+        /** Счетчик количества необработанных "главных" для этой задачи задач */
+        int mainsCount;
+        /** Список зависимых задач */
+        ArrayList<Integer> dependants = new ArrayList<>();
+        /** Используется для пометки итерации цикла, на которой задача стала "независимой",
+         * чтобы случайно не обработать её на этой же итерации.
          */
-        public Integer getMainTask() {
-            return tasksPair[0];
-        }
+        int stepNumber = -1;
         /**
-         * Функция получения второго значения поля {@link TaskContainer#tasksPair}
-         * @return возвращает номер зависимой задачи
+         * Внесение задачи в список зависимых. {@link TaskContainer#dependants}
          */
-        public Integer getDepTask(){
-            return tasksPair[1];
+        void addDependant(Integer dependant){
+            this.dependants.add(dependant);
         }
-        /**
-         * Конструктор, вносящий в {@link TaskContainer#tasksPair} значения из массива из двух строк.
-         * @param s - массив из двух кнвертируемых в Integer строк, проверок не производится
-         */
-        public TaskContainer(String[] s){
-            if (s.length == 2) {
-                tasksPair[0] = Integer.valueOf(s[0]);
-                tasksPair[1] = Integer.valueOf(s[1]);
-            }
+        public TaskContainer(int mainsCount){
+            this.mainsCount = mainsCount;
         }
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            TaskContainer taskContainer = (TaskContainer) o;
-            return Arrays.equals(tasksPair, taskContainer.tasksPair);
-        }
-        @Override
-        public int hashCode() {
-            return Arrays.hashCode(tasksPair);
-        }
+        public TaskContainer(){}
     }
 }
