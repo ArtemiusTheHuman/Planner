@@ -46,6 +46,9 @@ public class Planner {
             //Нам нужно сохранять задачи, которые зависят только от обработанных на предыдущих итерациях (ни от одной
             //другой для первой итерации).
             ArrayList<Integer> actualList = new ArrayList<>();
+            //прервем цикл, если на очередном шаге не было обработано ни одной задачи,
+            //это говорит о наличии циклических зависимостей.
+            boolean hasAnyIndependentTasks = false;
             //Обходим множество задач
             for (Iterator<Map.Entry<Integer, TaskContainer>> iterator = tasks.entrySet().iterator(); iterator.hasNext();) {
                 Map.Entry<Integer, TaskContainer> entry = iterator.next();
@@ -56,6 +59,7 @@ public class Planner {
                 if (value.mainsCount == 0 && value.stepNumber < actualStepNumber) {
                     actualList.add(key);
                     checkedTasksCount++;
+                    hasAnyIndependentTasks = true;
                     //Обходим все зависимые задачи,
                     //снижаем для них счетчик зависимостей,
                     //запоминаем номер итерации чтобы не обработать задачи как "независимые" в этой же итерации
@@ -70,6 +74,7 @@ public class Planner {
             //Сохраняем список, добавляя в результирующий список списков, и переходим к следующей итерации.
             result.add(actualList);
             actualStepNumber++;
+            if (!hasAnyIndependentTasks) break;
         }
         return result;
     }
@@ -89,8 +94,8 @@ public class Planner {
                 Integer dependant = Integer.parseInt(tasksNumbers[1]);
                 //Если зависимая задача уже в общем списке, повышаем для неё счетчик зависимостей
                 if (tasks.containsKey(dependant))
-                    tasks.get(dependant).mainsCount++;
-                else //Иначе просто кладем в список с одной завимимостью
+                    tasks.get(dependant).mainsCount++;//иначе просто кладем в список с одной завимимостью
+                else
                     tasks.put(dependant, new TaskContainer(1));
 
                 tasks.putIfAbsent(mainTask, new TaskContainer());
@@ -129,7 +134,7 @@ public class Planner {
         int mainsCount;
         /** Список зависимых задач */
         ArrayList<Integer> dependants = new ArrayList<>();
-        /** Используется для пометки итерации цикла, на которой задача стала "независимой",
+        /** используется для пометки итерации цикла, на которой задача стала "независимой",
          * чтобы случайно не обработать её на этой же итерации.
          */
         int stepNumber = -1;
